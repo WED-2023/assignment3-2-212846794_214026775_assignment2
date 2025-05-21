@@ -1,4 +1,3 @@
-require("dotenv").config();
 //#region express configures
 var express = require("express");
 var path = require("path");
@@ -6,6 +5,10 @@ var logger = require("morgan");
 const session = require("client-sessions");
 const DButils = require("./routes/utils/DButils");
 var cors = require('cors')
+const http = require("http");
+
+// Debug: Check if API key is loaded
+console.log('Spoonacular API Key:', '9759fc27d4184dd3ae465ec8ef1a9fef' ? 'Present' : 'Missing');
 
 var app = express();
 app.use(logger("dev")); //logger
@@ -13,14 +16,13 @@ app.use(express.json()); // parse application/json
 app.use(
   session({
     cookieName: "session", // the cookie key name
-    //secret: process.env.COOKIE_SECRET, // the encryption key
-    secret: "template", // the encryption key
-    duration: 24 * 60 * 60 * 1000, // expired after 20 sec
-    activeDuration: 1000 * 60 * 5, // if expiresIn < activeDuration,
+    secret: "your-secret-key", // the encryption key
+    duration: 24 * 60 * 60 * 1000, // expired after 24 hours
+    activeDuration: 1000 * 60 * 5, // if expiresIn < activeDuration, the session will be extended by activeDuration milliseconds
     cookie: {
       httpOnly: false,
+      secure: false // set to true in production with HTTPS
     }
-    //the session will be extended by activeDuration milliseconds
   })
 );
 app.use(express.urlencoded({ extended: false })); // parse application/x-www-form-urlencoded
@@ -39,22 +41,24 @@ app.get("/",function(req,res)
 
 });
 
-// app.use(cors());
-// app.options("*", cors());
+app.use(cors());
+app.options("*", cors());
 
-// const corsConfig = {
-//   origin: true,
-//   credentials: true
-// };
+const corsConfig = {
+  origin: true,
+  credentials: true
+};
 
-// app.use(cors(corsConfig));
-// app.options("*", cors(corsConfig));
+app.use(cors(corsConfig));
+app.options("*", cors(corsConfig));
 
-var port = process.env.PORT || "80"; //local=3000 remote=80
+var port = "3000"; //local=3000 remote=80
 //#endregion
 const user = require("./routes/user");
 const recipes = require("./routes/recipes");
 const auth = require("./routes/auth");
+const family = require("./routes/family");
+const meal_plan = require("./routes/meal_plan");
 
 
 //#region cookie middleware
@@ -75,17 +79,15 @@ app.use(function (req, res, next) {
 //#endregion
 
 // ----> For cheking that our server is alive
-app.get("/alive", (req, res) => res.send("I'm alive"));
+app.get("/api/alive", (req, res) => res.send("I'm alive"));
 
 // Routings
-app.use("/users", user);
-app.use("/recipes", recipes);
-app.use("/", auth);
+app.use("/api/users", user);
+app.use("/api/recipes", recipes);
+app.use("/api/auth", auth);
+app.use("/api/family", family);
 
-
-
-
-
+app.use("/api/meal-plan", meal_plan);
 
 // Default router
 app.use(function (err, req, res, next) {
@@ -93,10 +95,10 @@ app.use(function (err, req, res, next) {
   res.status(err.status || 500).send({ message: err.message, success: false });
 });
 
+const server = http.createServer(app);
 
-
-const server = app.listen(port, () => {
-  console.log(`Server listen on port ${port}`);
+server.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
 });
 
 process.on("SIGINT", function () {

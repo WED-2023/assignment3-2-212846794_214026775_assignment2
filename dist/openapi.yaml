@@ -4,8 +4,6 @@ info:
   description: Full API specification for the Grandma's Recipes web application
   version: 1.0.0
 servers:
-  - url: https://virtserver.swaggerhub.com/bgu-internet-cource/API/1.0.0
-    description: SwaggerHub API Auto Mocking
   - url: http://localhost:3000/api
     description: Local development server
 paths:

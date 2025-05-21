@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="dataSourceStorageLocal" created-in="WS-242.26775.11">
-    <data-source name="@localhost" uuid="af791538-9b84-42b1-b8fd-2b91e1f66f2c">
-      <database-info product="" version="" jdbc-version="" driver-name="" driver-version="" dbms="MYSQL_AURORA" />
+    <data-source name="@localhost" uuid="2dc09eef-acc8-4be8-9afb-0ca39d50d07d">
+      <database-info product="MySQL" version="9.3.0" jdbc-version="4.2" driver-name="Amazon Web Services (AWS) Advanced JDBC Wrapper" driver-version="Amazon Web Services (AWS) Advanced JDBC Wrapper 2.3.7 ( Revision: 7591851e8da4e1c705ba232a8bd07824a5cfd276 )" dbms="MYSQL" exact-version="9.3.0" exact-driver-version="2.3">
+        <extra-name-characters>#@</extra-name-characters>
+        <identifier-quote-string>`</identifier-quote-string>
+      </database-info>
+      <case-sensitivity plain-identifiers="mixed" quoted-identifiers="mixed" />
       <secret-storage>master_key</secret-storage>
-      <schema-mapping />
+      <user-name>root</user-name>
+      <schema-mapping>
+        <introspection-scope>
+          <node kind="schema">
+            <name qname="@" />
+            <name qname="mydb" />
+          </node>
+        </introspection-scope>
+      </schema-mapping>
     </data-source>
   </component>
 </project>
