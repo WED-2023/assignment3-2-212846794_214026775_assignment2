@@ -28,16 +28,16 @@ app.use(
 app.use(express.urlencoded({ extended: false })); // parse application/x-www-form-urlencoded
 app.use(express.static(path.join(__dirname, "public"))); //To serve static files such as images, CSS files, and JavaScript files
 //local:
-app.use(express.static(path.join(__dirname, "dist")));
+// app.use(express.static(path.join(__dirname, "dist")));
 //remote:
-// app.use(express.static(path.join(__dirname, '../assignment-3-3-frontend/dist')));
+app.use(express.static(path.join(__dirname, '../assignment-3-3-frontend/dist')));
 
 app.get("/",function(req,res)
 { 
   //remote: 
-  // res.sendFile(path.join(__dirname, '../assignment-3-3-frontend/dist/index.html'));
+  res.sendFile(path.join(__dirname, '../assignment-3-3-frontend/dist/index.html'));
   //local:
-  res.sendFile(__dirname+"/index.html");
+  // res.sendFile(__dirname+"/index.html");
 
 });
 
@@ -90,20 +90,22 @@ app.use("/api/family", family);
 app.use("/api/meal-plan", meal_plan);
 
 // Default router
-app.use(function (err, req, res, next) {
-  console.error(err);
-  res.status(err.status || 500).send({ message: err.message, success: false });
-});
+// app.use(function (err, req, res, next) {
+//   console.error(err);
+//   res.status(err.status || 500).send({ message: err.message, success: false });
+// });
 
-const server = http.createServer(app);
+// const server = http.createServer(app);
 
-server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+// server.listen(port, () => {
+//   console.log(`Server is running on port ${port}`);
+// });
 
-process.on("SIGINT", function () {
-  if (server) {
-    server.close(() => console.log("server closed"));
-  }
-  process.exit();
-});
+// process.on("SIGINT", function () {
+//   if (server) {
+//     server.close(() => console.log("server closed"));
+//   }
+//   process.exit();
+// });
+
+module.exports = app;
