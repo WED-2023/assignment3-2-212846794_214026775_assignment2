@@ -42,8 +42,7 @@ CREATE TABLE IF NOT EXISTS favorite_recipes (
     recipe_id BIGINT,
     favorited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, recipe_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
 -- Family Recipes Table
@@ -66,8 +65,7 @@ CREATE TABLE IF NOT EXISTS last_watched_recipes (
     recipe_id BIGINT,
     viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, recipe_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
 -- Meal Plan Table
@@ -78,8 +76,7 @@ CREATE TABLE IF NOT EXISTS meal_plan (
     progress DECIMAL(5,2) DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, recipe_id),
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id) ON DELETE CASCADE
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
 -- Indexes
@@ -122,3 +119,13 @@ DELIMITER ;
 
 CALL create_index_if_not_exists();
 DROP PROCEDURE create_index_if_not_exists;
+
+-- Recipe Likes Table
+CREATE TABLE IF NOT EXISTS recipe_likes (
+    user_id INT,
+    recipe_id BIGINT,
+    liked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, recipe_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id) ON DELETE CASCADE
+);

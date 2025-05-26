@@ -10,64 +10,6 @@ async function markAsFavorite(user_id, recipe_id) {
   try {
     console.log('Marking recipe as favorite:', { user_id, recipe_id });
     
-    // First check if recipe exists in our database
-    const recipe = await DButils.execQuery(
-      `SELECT recipe_id FROM recipes WHERE recipe_id = ${recipe_id}`
-    );
-    console.log('Existing recipe check:', recipe);
-
-    // If recipe doesn't exist, get it from Spoonacular and save it
-    if (recipe.length === 0) {
-      console.log('Recipe not found in database, fetching from Spoonacular');
-      try {
-        const recipeDetails = await recipe_utils.getRecipeInformation(recipe_id);
-        console.log('Got recipe details from Spoonacular:', recipeDetails);
-        
-        // Escape special characters in strings
-        const title = recipeDetails.title.replace(/'/g, "''");
-        const image = recipeDetails.image.replace(/'/g, "''");
-        const instructions = (recipeDetails.instructions || '').replace(/'/g, "''");
-        const ingredients = JSON.stringify(recipeDetails.extendedIngredients || []);
-        
-        // Insert the recipe with all required fields
-        const insertQuery = `
-          INSERT INTO recipes (
-            recipe_id, 
-            user_id,
-            title, 
-            readyInMinutes, 
-            image, 
-            popularity, 
-            vegan, 
-            vegetarian, 
-            glutenFree,
-            servings,
-            instructions,
-            ingredients
-          ) VALUES (
-            ${recipe_id}, 
-            ${user_id},
-            '${title}', 
-            ${recipeDetails.readyInMinutes || 0}, 
-            '${image}', 
-            ${recipeDetails.aggregateLikes || 0}, 
-            ${recipeDetails.vegan ? 1 : 0}, 
-            ${recipeDetails.vegetarian ? 1 : 0}, 
-            ${recipeDetails.glutenFree ? 1 : 0},
-            ${recipeDetails.servings || 1},
-            '${instructions}',
-            '${ingredients}'
-          )`;
-        
-        console.log('Inserting recipe with query:', insertQuery);
-        await DButils.execQuery(insertQuery);
-        console.log('Recipe inserted successfully');
-      } catch (apiError) {
-        console.error('Error fetching from Spoonacular:', apiError);
-        throw { status: 500, message: "Could not fetch recipe from Spoonacular API. Please check your API key." };
-      }
-    }
-
     // Add to favorites with current timestamp
     const favoriteQuery = `
       INSERT INTO favorite_recipes (user_id, recipe_id, favorited_at)
@@ -98,15 +40,31 @@ async function markAsFavorite(user_id, recipe_id) {
 async function getFavoriteRecipes(user_id) {
   try {
     console.log('Getting favorite recipes for user:', user_id);
+    // Get only the recipe IDs from favorites
     const favorites = await DButils.execQuery(
-      `SELECT r.* 
-       FROM favorite_recipes f
-       JOIN recipes r ON f.recipe_id = r.recipe_id
-       WHERE f.user_id = ${user_id}
-       ORDER BY f.favorited_at DESC`
+      `SELECT recipe_id 
+       FROM favorite_recipes
+       WHERE user_id = ${user_id}
+       ORDER BY favorited_at DESC`
     );
-    console.log('Found favorite recipes:', favorites);
-    return favorites;
+    
+    // Fetch recipe details from Spoonacular for each favorite
+    const favoriteRecipes = await Promise.all(
+      favorites.map(async (fav) => {
+        try {
+          const recipeDetails = await recipe_utils.getRecipeDetails(fav.recipe_id);
+          return {
+            ...recipeDetails,
+            isFavorite: true
+          };
+        } catch (error) {
+          console.error(`Error fetching recipe ${fav.recipe_id}:`, error);
+          return null;
+        }
+      })
+    );
+
+    return favoriteRecipes.filter(recipe => recipe !== null);
   } catch (error) {
     console.error('Error in getFavoriteRecipes:', error);
     throw error;
@@ -330,20 +288,23 @@ async function getMealPlan(user_id) {
  */
 async function addToMealPlan(user_id, recipe_id, position) {
   try {
-    // Check if recipe exists
+    // Check if recipe exists in our database
     const recipe = await DButils.execQuery(
       `SELECT recipe_id FROM recipes WHERE recipe_id = ${recipe_id}`
     );
-    if (recipe.length === 0) {
-      throw { status: 404, message: "Recipe not found" };
-    }
-
+    
+    // If recipe doesn't exist in our database, it's a Spoonacular recipe
+    // We don't need to check for existence since we removed the foreign key constraint
+    
     // Add to meal plan
     await DButils.execQuery(
       `INSERT INTO meal_plan (user_id, recipe_id, position) 
        VALUES (${user_id}, ${recipe_id}, ${position})`
     );
+    
+    return { message: "Recipe successfully added to meal plan" };
   } catch (error) {
+    console.error("Error in addToMealPlan:", error);
     throw { status: 500, message: "Error adding recipe to meal plan" };
   }
 }
@@ -404,3 +365,4 @@ module.exports = {
   removeFromMealPlan,
   getUserRecipes
 };
+

@@ -8,7 +8,7 @@ const recipes_utils = require("./utils/recipes_utils");
  */
 router.get("/", async (req, res, next) => {
   try {
-    const recipes = await recipes_utils.getRandomRecipes();
+    const recipes = await recipes_utils.getRandomRecipes(req);
     res.send(recipes);
   } catch (error) {
     next(error);
@@ -22,7 +22,7 @@ router.get("/", async (req, res, next) => {
 router.get("/search", async (req, res, next) => {
   try {
     const { query, cuisine, diet, intolerance, limit = 5 } = req.query;
-    const recipes = await recipes_utils.search(query, cuisine, diet, intolerance, limit);
+    const recipes = await recipes_utils.search(query, cuisine, diet, intolerance, limit, req);
     res.send(recipes);
   } catch (error) {
     next(error);
@@ -36,7 +36,7 @@ router.get("/search", async (req, res, next) => {
 router.get("/:recipeId", async (req, res, next) => {
   //done and checked
   try {
-    const recipe = await recipes_utils.getRecipeDetails(req.params.recipeId);
+    const recipe = await recipes_utils.getRecipeDetails(req.params.recipeId, req);
     res.send(recipe);
   } catch (error) {
     next(error);
