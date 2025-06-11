@@ -1,150 +1,121 @@
-var express = require("express");
-var router = express.Router();
-const MySql = require("../routes/utils/MySql");
-const DButils = require("../routes/utils/DButils");
+const express = require("express");
+const router = express.Router();
 const bcrypt = require("bcrypt");
+const DButils = require("./utils/DButils");
+const axios = require("axios");
 
-router.post("/Register", async (req, res, next) => {
-  try {
-    console.log('Registration attempt for username:', req.body.username);
-    
-    // parameters exists
-    // valid parameters
-    // username exists
-    let user_details = {
-      username: req.body.username,
-      first_name: req.body.firstName,
-      last_name: req.body.lastName,
-      country: req.body.country,
-      password: req.body.password,
-      email: req.body.email
-    }
-
-    console.log('User details:', {
-      username: user_details.username,
-      has_password: !!user_details.password,
-      email: user_details.email
-    });
-
-    let users = [];
-    users = await DButils.execQuery("SELECT username from users");
-
-    if (users.find((x) => x.username === user_details.username))
-      throw { status: 409, message: "Username taken" };
-
-    // add the new username
-    const saltRounds = 10; 
-    console.log('Using salt rounds:', saltRounds);
-    
-    let hash_password = bcrypt.hashSync(
-      user_details.password,
-      saltRounds
-    );
-
-    console.log('Generated password hash:', !!hash_password);
-
-    const query = `
-      INSERT INTO users (
-        username, 
-        first_name, 
-        last_name, 
-        country, 
-        password_hash, 
-        email
-      ) VALUES (
-        '${user_details.username}', 
-        '${user_details.first_name}', 
-        '${user_details.last_name}',
-        '${user_details.country}', 
-        '${hash_password}', 
-        '${user_details.email}'
-      )
-    `;
-
-    console.log('Executing query:', query);
-    await DButils.execQuery(query);
-
-    console.log('User registered successfully');
-    res.status(201).send({ message: "user created", success: true });
-  } catch (error) {
-    console.error('Registration error:', error);
-    next(error);
-  }
-});
-
-router.post("/Login", async (req, res, next) => {
-  try {
-    console.log('Login attempt for username:', req.body.username);
-    
-    // check that username exists
-    const users = await DButils.execQuery("SELECT username FROM users");
-    if (!users.find((x) => x.username === req.body.username))
-      throw { status: 401, message: "Username or Password incorrect" };
-
-    // check that the password is correct
-    const query = `SELECT user_id, username, password_hash FROM users WHERE username = '${req.body.username}'`;
-    console.log('Executing query:', query);
-    
-    const result = await DButils.execQuery(query);
-    console.log('Query result:', JSON.stringify(result, null, 2));
-    
-    const user = result[0];
-    console.log('User object:', JSON.stringify(user, null, 2));
-
-    if (!req.body.password) {
-      throw { status: 400, message: "Password is required" };
-    }
-
-    if (!user || !user.password_hash) {
-      console.error('User or password hash missing:', { user });
-      throw { status: 500, message: "User password hash not found" };
-    }
-
-    // Log the exact values being passed to bcrypt
-    console.log('Bcrypt comparison values:', {
-      providedPassword: req.body.password,
-      storedHash: user.password_hash,
-      passwordType: typeof req.body.password,
-      hashType: typeof user.password_hash
-    });
-
+// Register new user
+router.post("/register", async (req, res, next) => {
     try {
-      // Ensure both values are strings
-      const providedPassword = String(req.body.password);
-      const storedHash = String(user.password_hash);
-
-      console.log('About to compare:', {
-        providedPassword,
-        storedHash
-      });
-
-      const passwordMatch = bcrypt.compareSync(providedPassword, storedHash);
-      console.log('Password match result:', passwordMatch);
-
-      if (!passwordMatch) {
-        throw { status: 401, message: "Username or Password incorrect" };
+      const {
+        username,
+        password,
+        confirmPassword,
+        firstname,
+        lastname,
+        country,
+        email,
+        profile_pic = null
+      } = req.body;
+  
+      // Basic validation
+      if (!username || !password || !confirmPassword || !firstname || !lastname || !country || !email) {
+        return res.status(400).send({ message: "All fields are required" });
       }
-
-      // Set cookie
-      req.session.user_id = user.user_id;
-      console.log("session user_id login: " + req.session.user_id);
-
-      // return cookie
-      res.status(200).send({ message: "login succeeded", success: true });
-    } catch (bcryptError) {
-      console.error('Bcrypt error:', bcryptError);
-      throw { status: 500, message: "Error comparing passwords" };
+  
+      // Validate username: 3–8 letters
+      if (!/^[A-Za-z]{3,8}$/.test(username)) {
+        return res.status(400).send({ message: "Username must be 3–8 letters only" });
+      }
+  
+      // Validate password: 5–10 characters, at least one number and special character
+      if (
+        password.length < 5 || password.length > 10 ||
+        !/\d/.test(password) || !/[!@#$%^&*(),.?":{}|<>]/.test(password)
+      ) {
+        return res.status(400).send({ message: "Password must be 5–10 characters, include a number and a special character" });
+      }
+  
+      // Confirm password match
+      if (password !== confirmPassword) {
+        return res.status(400).send({ message: "Passwords do not match" });
+      }
+  
+      // Validate country via RESTCountries
+      const countriesRes = await axios.get("https://restcountries.com/v3.1/all?fields=name");
+      const validCountries = countriesRes.data.map(c => c.name.common);
+      if (!validCountries.includes(country)) {
+        return res.status(400).send({ message: "Invalid country" });
+      }
+  
+      // Check if username already exists
+      const existing = await DButils.execQuery(`SELECT 1 FROM users WHERE username = ?`, [username]);
+      if (existing.length > 0) {
+        return res.status(409).send({ message: "Username already exists" });
+      }
+  
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+  
+      // Insert into DB
+      await DButils.execQuery(
+        `INSERT INTO users (username, password, firstname, lastname, country, email, profile_pic)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [username, hashedPassword, firstname, lastname, country, email, profile_pic]
+      );
+  
+      res.status(201).send({ message: "User registered successfully" });
+    } catch (error) {
+      console.error("Registration error:", error);
+      next(error);
     }
-  } catch (error) {
-    console.error('Login error:', error);
-    next(error);
-  }
+  });
+  
+
+// Login
+router.post("/login", async (req, res, next) => {
+    try {
+      const { username, password } = req.body;
+  
+      // Basic validation
+      if (!username || !password) {
+        return res.status(400).send({ message: "Username and password are required" });
+      }
+  
+      // Secure query
+      const users = await DButils.execQuery(
+        `SELECT * FROM users WHERE username = ?`,
+        [username]
+      );
+  
+      if (users.length === 0) {
+        return res.status(401).send({ message: "Username or password incorrect" });
+      }
+  
+      const user = users[0];
+  
+      // Check password
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).send({ message: "Username or password incorrect" });
+      }
+  
+      // Set session
+      req.session.user_id = user.user_id;
+      req.session.username = user.username;
+  
+      res.status(200).send({ message: "Login successful", user_id: user.user_id });
+    } catch (error) {
+      console.error("Login error:", error);
+      next(error);
+    }
+  });
+  
+
+// Logout
+router.post("/logout", function (req, res) {
+    req.session.reset();
+    res.status(200).send({ message: "Logout successful" });
 });
 
-router.post("/Logout", function (req, res) {
-  console.log("session user_id Logout: " + req.session.user_id);
-  req.session.reset(); // reset the session info --> send cookie when  req.session == undefined!!
-  res.send({ success: true, message: "logout succeeded" });
-});
-
-module.exports = router;
+module.exports = router; 

@@ -1,0 +1,554 @@
+openapi: 3.0.3
+info:
+  title: Grandma's Recipes API
+  description: Full API specification for the Grandma's Recipes web application
+  version: 1.0.0
+servers:
+  - url: https://fad-ath.cs.bgu.ac.il/api
+    description: Production server
+  - url: http://localhost:3000/api
+    description: Local development server
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      description: Create a new user account with required credentials
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUser'
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "400":
+          description: Invalid input or username already exists
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate an existing user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginUser'
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        "401":
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout a user from the system and delete their cookie
+      responses:
+        "200":
+          description: The user has been successfully logged out.
+
+  /recipes:
+    get:
+      tags:
+        - Recipes
+      summary: Get random recipes
+      description: Retrieve 3 random recipes for the homepage
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipePreview'
+    post:
+      tags:
+        - Recipes
+      summary: Create a new recipe
+      description: Add a new recipe to the database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewRecipe'
+      responses:
+        "201":
+          description: Recipe created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeDetail'
+
+  /recipes/search:
+    get:
+      tags:
+        - Recipes
+      summary: Search recipes
+      description: Search recipes with optional filters
+      parameters:
+        - name: query
+          in: query
+          description: Search term
+          required: false
+          schema:
+            type: string
+        - name: cuisine
+          in: query
+          description: Filter by cuisine type
+          required: false
+          schema:
+            type: string
+        - name: diet
+          in: query
+          description: Filter by dietary restriction
+          required: false
+          schema:
+            type: string
+        - name: intolerance
+          in: query
+          description: Filter by food intolerance
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of results to return (5, 10, or 15)
+          required: false
+          schema:
+            type: integer
+            default: 5
+            enum: [5, 10, 15]
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipePreview'
+
+  /recipes/{id}:
+    get:
+      tags:
+        - Recipes
+      summary: Get recipe details
+      description: Retrieve full details of a specific recipe
+      parameters:
+        - name: id
+          in: path
+          description: Recipe ID
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recipe details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecipeDetail'
+
+  /users/{username}/recipes:
+    get:
+      tags:
+        - Users
+      summary: Get user's recipes
+      description: Retrieve recipes created by the user
+      parameters:
+        - name: username
+          in: path
+          description: Username
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User's recipes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipePreview'
+
+  /users/{username}/favorites:
+    get:
+      tags:
+        - Users
+      summary: Get user's favorite recipes
+      description: Retrieve recipes favorited by the user
+      parameters:
+        - name: username
+          in: path
+          description: Username
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Favorite recipes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipePreview'
+    post:
+      tags:
+        - Users
+      summary: Add recipe to favorites
+      description: Mark a recipe as favorite for the user
+      parameters:
+        - name: username
+          in: path
+          description: Username
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/username_favorites_body'
+      responses:
+        "200":
+          description: Recipe added to favorites
+
+  /users/lastWatchedRecipes:
+    get:
+      tags:
+        - Users
+      summary: Get 3 last watched recipes by the logged-in user
+      description: Return 3 last watched recipes by the logged-in user
+      responses:
+        "200":
+          description: Successfully returned 3 last watched recipes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RecipeDetail'
+        "400":
+          description: Invalid input
+    post:
+      tags:
+        - Users
+      summary: Save recipe in the watch list of a user
+      description: Save recipe in the watch list of a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/users_lastWatchedRecipes_body'
+      responses:
+        "200":
+          description: The recipe successfully saved as viewed
+        "401":
+          description: User is not authorized
+      security:
+        - cookieAuth: []
+
+  /users/{username}/family-recipes:
+    get:
+      tags:
+        - Users
+      summary: Get family recipes
+      description: Retrieve user's family recipes
+      parameters:
+        - name: username
+          in: path
+          description: Username
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Family recipes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FamilyRecipe'
+
+  /meal-plan:
+    get:
+      tags:
+        - Meal
+      summary: Get meal plan
+      description: Retrieve user's current meal plan
+      responses:
+        "200":
+          description: Meal plan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MealPlan'
+    post:
+      tags:
+        - Meal
+      summary: Add recipe to meal plan
+      description: Add a recipe to the user's meal plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/mealplan_body'
+      responses:
+        "200":
+          description: Recipe added to meal plan
+
+  /meal-plan/{recipeId}:
+    delete:
+      tags:
+        - Meal
+      summary: Remove recipe from meal plan
+      description: Remove a recipe from the user's meal plan
+      parameters:
+        - name: recipeId
+          in: path
+          description: Recipe ID to remove
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recipe removed from meal plan
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+
+  schemas:
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT authentication token
+        user:
+          $ref: '#/components/schemas/UserProfile'
+
+    UserProfile:
+      type: object
+      properties:
+        username:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        country:
+          type: string
+
+    RegisterUser:
+      required:
+        - country
+        - email
+        - firstName
+        - lastName
+        - password
+        - passwordConfirmation
+        - username
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 8
+          pattern: "^[a-zA-Z]+$"
+          example: johndoe
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Doe
+        country:
+          type: string
+          example: Israel
+        email:
+          type: string
+          format: email
+          example: johndoe@example.com
+        password:
+          type: string
+          minLength: 5
+          maxLength: 10
+          pattern: "^(?=.*[0-9])(?=.*[!@#$%^&*])"
+          example: Passw0rd!
+        passwordConfirmation:
+          type: string
+          example: Passw0rd!
+
+    LoginUser:
+      required:
+        - username
+        - password
+      type: object
+      properties:
+        username:
+          type: string
+          example: johndoe
+        password:
+          type: string
+          example: Passw0rd!
+
+    RecipePreview:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        image:
+          type: string
+          format: uri
+        readyInMinutes:
+          type: integer
+        popularity:
+          type: integer
+        isVegan:
+          type: boolean
+        isVegetarian:
+          type: boolean
+        isGlutenFree:
+          type: boolean
+        isViewed:
+          type: boolean
+        isFavorite:
+          type: boolean
+
+    RecipeDetail:
+      allOf:
+        - $ref: '#/components/schemas/RecipePreview'
+        - type: object
+          properties:
+            ingredients:
+              type: array
+              items:
+                type: string
+            instructions:
+              type: string
+            servings:
+              type: integer
+            source:
+              type: string
+            createdBy:
+              type: string
+
+    NewRecipe:
+      required:
+        - title
+        - ingredients
+        - instructions
+        - servings
+      type: object
+      properties:
+        title:
+          type: string
+        ingredients:
+          type: array
+          items:
+            type: string
+        instructions:
+          type: string
+        servings:
+          type: integer
+        isVegan:
+          type: boolean
+          default: false
+        isVegetarian:
+          type: boolean
+          default: false
+        isGlutenFree:
+          type: boolean
+          default: false
+
+    FamilyRecipe:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        familyMember:
+          type: string
+        occasion:
+          type: string
+        ingredients:
+          type: array
+          items:
+            type: string
+        instructions:
+          type: string
+        images:
+          type: array
+          items:
+            type: string
+            format: uri
+
+    MealPlan:
+      type: object
+      properties:
+        recipes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MealPlan_recipes'
+
+    username_favorites_body:
+      type: object
+      properties:
+        recipeId:
+          type: integer
+
+    mealplan_body:
+      type: object
+      properties:
+        recipeId:
+          type: integer
+        position:
+          type: integer
+
+    MealPlan_recipes:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+
+    users_lastWatchedRecipes_body:
+      type: object
+      properties:
+        recipeId:
+          type: integer

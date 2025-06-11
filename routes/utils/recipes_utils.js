@@ -3,311 +3,389 @@ const DButils = require("./DButils");
 const api_domain = "https://api.spoonacular.com/recipes";
 const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
 
-// Cache duration in seconds (1 hour)
-const CACHE_DURATION = 3600;
-
 /**
- * Get recipe information by ID with caching
+ * Transform Spoonacular or DB-stored recipe to uniform format
  */
-async function getRecipeInformation(recipe_id) {
-    try {
-        // First check if it's a custom recipe
-        const customRecipe = await DButils.execQuery(
-            `SELECT * FROM recipes 
-             WHERE recipe_id = ${recipe_id} 
-             AND source = 'custom'`
-        );
-
-        if (customRecipe.length > 0) {
-            console.log('Found custom recipe:', recipe_id);
-            return customRecipe[0];
-        }
-
-        // Check if recipe exists in cache and is not expired
-        const cachedRecipe = await DButils.execQuery(
-            `SELECT * FROM recipes 
-             WHERE recipe_id = ${recipe_id} 
-             AND source = 'spoonacular'
-             AND cache_timestamp > DATE_SUB(NOW(), INTERVAL ${CACHE_DURATION} SECOND)`
-        );
-
-        if (cachedRecipe.length > 0) {
-            console.log('Recipe found in cache:', recipe_id);
-            return cachedRecipe[0];
-        }
-
-        // If not in cache or expired, fetch from API
-        console.log('Fetching recipe from Spoonacular:', recipe_id);
-        const response = await axios.get(`${api_domain}/${recipe_id}/information`, {
-            params: { apiKey: SPOONACULAR_API_KEY }
-        });
-
-        const recipeData = response.data;
-        
-        // Update or insert into cache
-        await DButils.execQuery(`
-            INSERT INTO recipes (
-                recipe_id, title, image, popularity, source, 
-                readyInMinutes, vegetarian, vegan, glutenFree, 
-                servings, instructions, ingredients, cache_timestamp
-            )
-            VALUES (
-                ${recipe_id}, 
-                '${recipeData.title}', 
-                '${recipeData.image}', 
-                ${recipeData.aggregateLikes || 0},
-                'spoonacular',
-                ${recipeData.readyInMinutes || null},
-                ${recipeData.vegetarian ? 1 : 0},
-                ${recipeData.vegan ? 1 : 0},
-                ${recipeData.glutenFree ? 1 : 0},
-                ${recipeData.servings || null},
-                '${recipeData.instructions || ''}',
-                '${JSON.stringify(recipeData.extendedIngredients || [])}',
-                NOW()
-            )
-            ON DUPLICATE KEY UPDATE 
-                title = VALUES(title),
-                image = VALUES(image),
-                popularity = VALUES(popularity),
-                readyInMinutes = VALUES(readyInMinutes),
-                vegetarian = VALUES(vegetarian),
-                vegan = VALUES(vegan),
-                glutenFree = VALUES(glutenFree),
-                servings = VALUES(servings),
-                instructions = VALUES(instructions),
-                ingredients = VALUES(ingredients),
-                cache_timestamp = NOW()
-        `);
-
-        return recipeData;
-    } catch (error) {
-        console.error('Error in getRecipeInformation:', error);
-        throw error;
-    }
+function transformRecipeData(recipe, source = "spoonacular") {
+  const defaultImage = '/default_recipe_image.png';
+  const defaultSummary = 'No summary available.';
+  
+  return {
+    id: recipe.recipe_id || recipe.id,
+    title: recipe.title,
+    image: recipe.image || defaultImage,
+    readyInMinutes: recipe.readyInMinutes || recipe.ready_in_minutes || 0,
+    preparationMinutes: recipe.preparationMinutes || recipe.preparation_minutes || 0,
+    cookingMinutes: recipe.cookingMinutes || recipe.cooking_minutes || 0,
+    servings: recipe.servings || 0,
+    vegetarian: !!(recipe.vegetarian || recipe.isVegetarian),
+    vegan: !!(recipe.vegan || recipe.isVegan),
+    glutenFree: !!(recipe.glutenFree || recipe.isGlutenFree),
+    popularity: recipe.popularity || 0,
+    instructions: recipe.instructions || "",
+    extendedIngredients: Array.isArray(recipe.extendedIngredients) ? recipe.extendedIngredients : (recipe.extendedIngredients ? JSON.parse(recipe.extendedIngredients) : []),
+    dishTypes: Array.isArray(recipe.dishTypes) ? recipe.dishTypes : (recipe.dishTypes ? JSON.parse(recipe.dishTypes) : []),
+    cuisines: Array.isArray(recipe.cuisines) ? recipe.cuisines : (recipe.cuisines ? JSON.parse(recipe.cuisines) : []),
+    diets: Array.isArray(recipe.diets) ? recipe.diets : (recipe.diets ? JSON.parse(recipe.diets) : []),
+    occasions: Array.isArray(recipe.occasions) ? recipe.occasions : (recipe.occasions ? JSON.parse(recipe.occasions) : []),
+    winePairing: recipe.winePairing || {},
+    healthScore: recipe.healthScore || 0,
+    pricePerServing: recipe.pricePerServing || 0,
+    sourceName: recipe.sourceName || "",
+    sourceUrl: recipe.sourceUrl || "",
+    spoonacularSourceUrl: recipe.spoonacularSourceUrl || "",
+    summary: recipe.summary || defaultSummary,
+    source: source
+  };
 }
 
 /**
- * Get analyzed instructions for a recipe
+ * Get recipe details by ID from DB or Spoonacular
  */
-async function getAnalyzedInstructions(recipe_id) {
-    try {
-        const response = await axios.get(`${api_domain}/${recipe_id}/analyzedInstructions`, {
-            params: {
-                apiKey: process.env.SPOONACULAR_API_KEY
-            }
-        });
-        return response;
-    } catch (error) {
-        console.error('Error in getAnalyzedInstructions:', error.response?.data || error.message);
-        throw error;
+async function getRecipeInformation(recipeId, user_id=null) {
+  console.log(`Backend: Attempting to get information for recipe ID: ${recipeId}`);
+  
+  let dbRecipe = null;
+  try {
+    const rows = await DButils.execQuery("SELECT * FROM recipes WHERE recipe_id = ?", [recipeId]);
+    if (rows.length > 0) {
+      dbRecipe = rows[0];
+      console.log(`Backend: Raw DB recipe data for ${recipeId}:`, dbRecipe);
     }
+  } catch (dbError) {
+    console.error(`Backend: Error fetching recipe ${recipeId} from DB:`, dbError);
+  }
+
+  let spoonacularData = null;
+  try {
+    console.log(`Backend: Fetching Spoonacular data for ${recipeId}...`);
+    const response = await axios.get(`${api_domain}/${recipeId}/information`, {
+      params: { 
+        apiKey: SPOONACULAR_API_KEY,
+        addRecipeInformation: true,
+        fillIngredients: true,
+        instructionsRequired: true,
+        addRecipeNutrition: true
+      }
+    });
+    
+    if (response.data) {
+      spoonacularData = response.data;
+      console.log(`Backend: Successfully fetched Spoonacular data for ${recipeId}`);
+    } else {
+      console.warn(`Backend: No data received from Spoonacular for ${recipeId}`);
+    }
+  } catch (spoonacularError) {
+    console.error(`Backend: Error fetching recipe ${recipeId} from Spoonacular:`, spoonacularError.message);
+    if (spoonacularError.response) {
+      console.error('Spoonacular API error details:', spoonacularError.response.data);
+    }
+  }
+
+  // If we have Spoonacular data, use it
+  if (spoonacularData) {
+    const transformedData = transformRecipeData(spoonacularData, "spoonacular");
+    
+    // Add favorite status if user is logged in
+    if (user_id) {
+      const favoriteCheck = await DButils.execQuery(
+        "SELECT COUNT(*) as count FROM favorite_recipes WHERE recipe_id = ? AND user_id = ?",
+        [recipeId, user_id]
+      );
+      transformedData.isFavorite = favoriteCheck[0].count > 0 ? 1 : 0;
+    }
+    
+    return transformedData;
+  }
+  
+  // If we have DB data but no Spoonacular data, use DB data
+  if (dbRecipe) {
+    const transformedData = transformRecipeData(dbRecipe, "db");
+    
+    // Add favorite status if user is logged in
+    if (user_id) {
+      const favoriteCheck = await DButils.execQuery(
+        "SELECT COUNT(*) as count FROM favorite_recipes WHERE recipe_id = ? AND user_id = ?",
+        [recipeId, user_id]
+      );
+      transformedData.isFavorite = favoriteCheck[0].count > 0 ? 1 : 0;
+    }
+    
+    return transformedData;
+  }
+
+  // If we have neither, throw a more specific error
+  throw { 
+    status: 404, 
+    message: `Recipe ${recipeId} not found. Spoonacular API error: ${spoonacularError?.response?.data?.message || 'Unknown error'}`
+  };
+}
+
+function escape(str) {
+  return String(str).replace(/'/g, "''");
+}
+  
+  async function addNewRecipe(body, user_id) {
+    const {
+      title,
+    preparationMinutes,
+    cookingMinutes,
+      readyInMinutes,
+      servings,
+      image,
+      vegetarian,
+      vegan,
+      glutenFree,
+      instructions,
+      extendedIngredients,
+      dishTypes,
+      cuisines,
+      diets,
+      occasions,
+      winePairing,
+      healthScore,
+      pricePerServing,
+      sourceName,
+      sourceUrl,
+      summary
+    } = body;
+  
+    const recipe_id = Date.now(); // unique enough
+  
+    await DButils.execQuery(`
+      INSERT INTO recipes (
+      recipe_id, user_id, title, image, preparationMinutes, cookingMinutes, readyInMinutes, servings, vegetarian, vegan, glutenFree,
+        instructions, extendedIngredients, dishTypes, cuisines, diets, occasions, healthScore, pricePerServing, summary
+      ) VALUES (
+        ${recipe_id},
+        ${user_id},
+        '${escape(title)}',
+        '${escape(image)}',
+      ${preparationMinutes || 0},
+      ${cookingMinutes || 0},
+      ${readyInMinutes || 0},
+      ${servings || 0},
+        ${vegetarian ? 1 : 0},
+        ${vegan ? 1 : 0},
+        ${glutenFree ? 1 : 0},
+        '${escape(instructions)}',
+        '${escape(JSON.stringify(extendedIngredients || []))}',
+        '${escape(JSON.stringify(dishTypes || []))}',
+        '${escape(JSON.stringify(cuisines || []))}',
+        '${escape(JSON.stringify(diets || []))}',
+        '${escape(JSON.stringify(occasions || []))}',
+        ${healthScore || 0},
+        ${pricePerServing || 0},
+        '${escape(summary || "")}'
+      )
+    `);
+  
+    return transformRecipeData({ recipe_id, ...body }, "custom");
+  }
+
+/**
+ * Get preview of recipes
+ */
+async function getRecipesPreview(ids) {
+  const previews = await Promise.all(
+    ids.map(async id => {
+      try {
+        return await getRecipeInformation(id);
+      } catch {
+        return null;
+      }
+    })
+  );
+  return previews.filter(Boolean);
 }
 
 /**
- * Get full recipe details with caching
- */
-async function getRecipeDetails(recipe_id) {
-    try {
-        const recipe_info = await getRecipeInformation(recipe_id);
-        
-        // Get user-specific data if user is logged in
-        let isViewed = false;
-        let isFavorite = false;
-        
-        if (recipe_info.user_id) {
-            const [viewed, favorited] = await Promise.all([
-                DButils.execQuery(
-                    `SELECT 1 FROM last_watched_recipes 
-                     WHERE user_id = ${recipe_info.user_id} AND recipe_id = ${recipe_id}`
-                ),
-                DButils.execQuery(
-                    `SELECT 1 FROM favorite_recipes 
-                     WHERE user_id = ${recipe_info.user_id} AND recipe_id = ${recipe_id}`
-                )
-            ]);
-            
-            isViewed = viewed.length > 0;
-            isFavorite = favorited.length > 0;
-        }
-
-        // Handle both custom and Spoonacular recipes
-        const ingredients = recipe_info.source === 'custom' 
-            ? JSON.parse(recipe_info.ingredients)
-            : recipe_info.extendedIngredients?.map(ing => ing.original) || [];
-
-        return {
-            id: recipe_info.id,
-            title: recipe_info.title,
-            readyInMinutes: recipe_info.readyInMinutes,
-            image: recipe_info.image,
-            popularity: recipe_info.popularity || 0,
-            isVegan: recipe_info.vegan,
-            isVegetarian: recipe_info.vegetarian,
-            isGlutenFree: recipe_info.glutenFree,
-            ingredients: ingredients,
-            instructions: recipe_info.instructions,
-            servings: recipe_info.servings,
-            isViewed,
-            isFavorite,
-            source: recipe_info.source
-        };
-    } catch (error) {
-        console.error('Error in getRecipeDetails:', error);
-        throw error;
-    }
-}
-
-/**
- * Get preview of multiple recipes with caching
- */
-async function getRecipesPreview(recipes_id_array) {
-    try {
-        const recipesPreview = [];
-        
-        for (const recipe_id of recipes_id_array) {
-            try {
-                const recipe_preview = await getRecipeDetails(recipe_id);
-                recipesPreview.push(recipe_preview);
-            } catch (error) {
-                console.error(`Error getting details for recipe ${recipe_id}:`, error.message);
-                // Skip this recipe instead of failing the entire request
-            }
-        }
-        
-        return recipesPreview;
-    } catch (error) {
-        console.error('Error in getRecipesPreview:', error);
-        throw error;
-    }
-}
-
-/**
- * Search recipes with filters
- */
-async function search(query, cuisine, diet, intolerance, limit = 5) {
-    try {
-        // Validate limit parameter
-        if (![5, 10, 15].includes(parseInt(limit))) {
-            throw new Error('Limit parameter must be 5, 10, or 15');
-        }
-
-        const searchParams = {
-            apiKey: SPOONACULAR_API_KEY,
-            query: query,
-            number: limit,
-            addRecipeInformation: true
-        };
-
-        if (cuisine) searchParams.cuisine = cuisine;
-        if (diet) searchParams.diet = diet;
-        if (intolerance) searchParams.intolerances = intolerance;
-
-        const searchResponse = await axios.get(`${api_domain}/complexSearch`, { 
-            params: searchParams
-        });
-
-        if (!searchResponse.data.results || searchResponse.data.results.length === 0) {
-            return [];
-        }
-
-        // Get detailed information for each recipe
-        const recipes = await Promise.all(
-            searchResponse.data.results.map(async (recipe) => {
-                try {
-                    const details = await getRecipeDetails(recipe.id);
-                    return {
-                        ...details,
-                        isViewed: false,
-                        isFavorite: false
-                    };
-                } catch (error) {
-                    console.error(`Error getting details for recipe ${recipe.id}:`, error.message);
-                    return null;
-                }
-            })
-        );
-
-        return recipes.filter(recipe => recipe !== null);
-    } catch (error) {
-        console.error('Error in search:', error);
-        throw error;
-    }
-}
-
-/**
- * Get random recipes
+ * Get random recipes from Spoonacular
  */
 async function getRandomRecipes() {
-    try {
-        const response = await axios.get(`${api_domain}/random`, {
-            params: {
-                apiKey: SPOONACULAR_API_KEY,
-                number: 3,
-                addRecipeInformation: true
-            }
-        });
-
-        if (!response.data.recipes || response.data.recipes.length === 0) {
-            return [];
-        }
-
-        const recipes = await Promise.all(
-            response.data.recipes.map(recipe => getRecipeDetails(recipe.id))
-        );
-
-        return recipes;
-    } catch (error) {
-        console.error('Error in getRandomRecipes:', error);
-        throw error;
+  const { data } = await axios.get(`${api_domain}/random`, {
+    params: {
+      apiKey: SPOONACULAR_API_KEY,
+      number: 3,
+      addRecipeInformation: true
     }
+  });
+
+  return data.recipes.map(r => transformRecipeData(r));
 }
 
 /**
- * Add new custom recipe to database
+ * Get trending/popular recipes (same logic)
  */
-async function addNewRecipe(req) {
-    try {
-        const user_id = req.session.user_id;
-        const { title, readyInMinutes, vegetarian, vegan, glutenFree, servings, instructions, ingredients, image } = req.body;
-
-        // Generate a unique recipe ID for custom recipes
-        const timestamp = Date.now();
-        const recipe_id = parseInt(`${user_id}${timestamp}`);
-
-        const result = await DButils.execQuery(`
-            INSERT INTO recipes (
-                recipe_id, user_id, title, image, source,
-                readyInMinutes, vegetarian, vegan, glutenFree, 
-                servings, instructions, ingredients
-            ) VALUES (
-                ${recipe_id},
-                ${user_id},
-                '${title}',
-                '${image}',
-                'custom',
-                ${readyInMinutes},
-                ${vegetarian ? 1 : 0},
-                ${vegan ? 1 : 0},
-                ${glutenFree ? 1 : 0},
-                ${servings},
-                '${instructions}',
-                '${JSON.stringify(ingredients)}'
-            )
-        `);
-
-        return recipe_id;
-    } catch (error) {
-        console.error('Error in addNewRecipe:', error.message);
-        throw error;
+async function getTrendingRecipes() {
+  const { data } = await axios.get(`${api_domain}/complexSearch`, {
+    params: {
+      apiKey: SPOONACULAR_API_KEY,
+      sort: "popularity",
+      number: 5,
+      addRecipeInformation: true
     }
+  });
+
+  return getRecipesPreview(data.results.map(r => r.id));
+}
+
+async function getPopularRecipes() {
+  const { data } = await axios.get(`${api_domain}/complexSearch`, {
+    params: {
+      apiKey: SPOONACULAR_API_KEY,
+      sort: "popularity",
+      number: 10,
+      addRecipeInformation: true
+    }
+  });
+
+  return getRecipesPreview(data.results.map(r => r.id));
+}
+
+/**
+ * Search both DB and Spoonacular
+ */
+async function search(query, cuisine, diet, intolerance, limit = 5, sort, sortDirection = 'asc') {
+  try {
+    // Prepare Spoonacular API parameters
+    const params = {
+      apiKey: SPOONACULAR_API_KEY,
+      query: query || '',
+      number: limit,
+      addRecipeInformation: true,
+      fillIngredients: true,
+      instructionsRequired: true,
+      addRecipeNutrition: true
+    };
+
+    // Add optional filters if provided
+    if (cuisine) params.cuisine = cuisine;
+    if (diet) params.diet = diet;
+    if (intolerance) params.intolerances = intolerance;
+
+    // Add sorting if provided
+    if (sort) {
+      // Map our sort parameters to Spoonacular's
+      switch (sort) {
+        case 'readyInMinutes':
+          params.sort = 'time';
+          break;
+        case 'popularity':
+          params.sort = 'popularity';
+          break;
+        case 'calories':
+          params.sort = 'calories';
+          break;
+        default:
+          params.sort = sort;
+      }
+      params.sortDirection = sortDirection;
+    }
+
+    console.log('Searching Spoonacular with params:', params);
+
+    // Make the API call
+    const { data } = await axios.get(`${api_domain}/complexSearch`, { params });
+    
+    if (!data || !data.results) {
+      console.error('Invalid response from Spoonacular:', data);
+      return [];
+    }
+
+    // Transform the results
+    const transformedResults = data.results.map(recipe => ({
+      ...transformRecipeData(recipe),
+      totalResults: data.totalResults,
+      offset: data.offset,
+      number: data.number
+    }));
+
+    return transformedResults;
+
+  } catch (error) {
+    console.error('Error searching recipes:', error);
+    if (error.response) {
+      console.error('Spoonacular API error:', error.response.data);
+    }
+    throw error;
+  }
+}
+
+/**
+ * Add a recipe to user's favorites
+ */
+async function addToFavorites(user_id, recipe_id) {
+      try {
+    await DButils.execQuery(
+      "INSERT INTO favorite_recipes (user_id, recipe_id) VALUES (?, ?)",
+      [user_id, recipe_id]
+    );
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw new Error("Recipe already in favorites");
+      }
+    throw error;
+  }
+}
+
+/**
+ * Remove a recipe from user's favorites
+ */
+async function removeFromFavorites(user_id, recipe_id) {
+  await DButils.execQuery(
+    "DELETE FROM favorite_recipes WHERE user_id = ? AND recipe_id = ?",
+    [user_id, recipe_id]
+  );
+}
+
+/**
+ * Get user's favorite recipes
+ */
+async function getUserFavorites(user_id) {
+  console.log(`Backend: Fetching favorite recipe IDs for user ${user_id}`);
+  const favoriteRecipeIds = await DButils.execQuery(
+    "SELECT recipe_id FROM favorite_recipes WHERE user_id = ?",
+    [user_id]
+  );
+  const ids = favoriteRecipeIds.map(row => row.recipe_id);
+  console.log(`Backend: Found favorite recipe IDs:`, ids);
+  // Use getRecipesPreview to fetch full details for all favorited recipe IDs
+  const favoriteRecipes = await getRecipesPreview(ids);
+  console.log(`Backend: Fetched full favorite recipe details:`, favoriteRecipes);
+  return favoriteRecipes;
+}
+
+async function getUserRecipes(user_id) {
+  try {
+    const recipes = await DButils.execQuery(
+      "SELECT * FROM recipes WHERE user_id = ?",
+      [user_id]
+    );
+    const recipesWithPopularity = await Promise.all(recipes.map(async (r) => {
+      const favoriteCount = await DButils.execQuery(
+        "SELECT COUNT(*) as count FROM favorite_recipes WHERE recipe_id = ?",
+        [r.recipe_id]
+      );
+      return transformRecipeData({ ...r, popularity: favoriteCount[0].count }, "custom");
+    }));
+    return recipesWithPopularity;
+  } catch (error) {
+    throw error;
+  }
 }
 
 module.exports = {
-    getRecipeDetails,
-    getRecipesPreview,
-    search,
-    getRandomRecipes,
-    addNewRecipe,
-    getRecipeInformation
+  transformRecipeData,
+  getRecipeInformation,
+  addNewRecipe,
+  getRecipesPreview,
+  getRandomRecipes,
+  getTrendingRecipes,
+  getPopularRecipes,
+  search,
+  addToFavorites,
+  removeFromFavorites,
+  getUserFavorites,
+  getUserRecipes,
 };

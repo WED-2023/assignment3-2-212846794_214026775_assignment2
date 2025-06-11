@@ -12,18 +12,19 @@ var httpsOptions = {
  * Get port from environment and store in Express.
  */
 var port = normalizePort(process.env.PORT || '443');
+var host = 'fad-ath.cs.bgu.ac.il';
 
 app.set('port', port);
 
 /**
- * Create HTTP server.
+ * Create HTTPS server.
  */
 var server = https.createServer(httpsOptions, app);
 
 /**
  * Listen on provided port, on all network interfaces.
  */
-server.listen(port);
+server.listen(port, host);
 server.on('error', onError);
 server.on('listening', onListening);
 
@@ -74,11 +75,10 @@ function onError(error) {
 /**
  * Event listener for HTTP server "listening" event.
  */
-server.address("https://fad-ath.cs.bgu.ac.il");
 function onListening() {
   var addr = server.address();
   var bind = typeof addr === 'string'
     ? 'pipe ' + addr
     : 'port ' + addr.port;
-    console.log(`Server listen in port ${port} in adrress ${addr.address}`);
+  console.log(`Server is running on https://${host}:${port}`);
 }
