@@ -1,7 +1,7 @@
 const axios = require("axios");
 const DButils = require("./DButils");
 const api_domain = "https://api.spoonacular.com/recipes";
-const SPOONACULAR_API_KEY = process.env.SPOONACULAR_API_KEY;
+const SPOONACULAR_API_KEY = "9759fc27d4184dd3ae465ec8ef1a9fef";
 
 /**
  * Transform Spoonacular or DB-stored recipe to uniform format

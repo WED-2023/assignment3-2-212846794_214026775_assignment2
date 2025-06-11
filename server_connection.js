@@ -1,25 +1,20 @@
 var path = require("path");
 var app = require('./main');
-var https = require('https');
-var fs = require('fs');
-
-var httpsOptions = {
-  key: fs.readFileSync(path.join(__dirname, "privkey.pem")),//server.key
-  cert: fs.readFileSync(path.join(__dirname, "fullchain.pem")),//server.cert
-}
+var http = require('http');
 
 /**
  * Get port from environment and store in Express.
  */
 var port = normalizePort(process.env.PORT || '443');
 var host = 'fad-ath.cs.bgu.ac.il';
+var port = normalizePort(process.env.PORT || '3000');
 
 app.set('port', port);
 
 /**
  * Create HTTPS server.
  */
-var server = https.createServer(httpsOptions, app);
+var server = http.createServer(app);
 
 /**
  * Listen on provided port, on all network interfaces.
@@ -81,4 +76,5 @@ function onListening() {
     ? 'pipe ' + addr
     : 'port ' + addr.port;
   console.log(`Server is running on https://${host}:${port}`);
+    console.log(`Server listening on port ${port}`);
 }
