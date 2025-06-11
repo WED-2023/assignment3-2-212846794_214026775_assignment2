@@ -5,10 +5,12 @@ var logger = require("morgan");
 const session = require("client-sessions");
 const DButils = require("./routes/utils/DButils");
 var cors = require('cors')
-const http = require("http");
+
+// Configuration
+const SPOONACULAR_API_KEY = '9759fc27d4184dd3ae465ec8ef1a9fef';
 
 // Debug: Check if API key is loaded
-console.log('Spoonacular API Key:', '9759fc27d4184dd3ae465ec8ef1a9fef' ? 'Present' : 'Missing');
+console.log('Spoonacular API Key:', SPOONACULAR_API_KEY ? 'Present' : 'Missing');
 
 var app = express();
 app.use(logger("dev")); //logger
@@ -52,7 +54,6 @@ const corsConfig = {
 app.use(cors(corsConfig));
 app.options("*", cors(corsConfig));
 
-var port = "3000"; //local=3000 remote=80
 //#endregion
 const user = require("./routes/user");
 const recipes = require("./routes/recipes");
@@ -90,22 +91,9 @@ app.use("/api/family", family);
 app.use("/api/meal-plan", meal_plan);
 
 // Default router
-// app.use(function (err, req, res, next) {
-//   console.error(err);
-//   res.status(err.status || 500).send({ message: err.message, success: false });
-// });
-
-// const server = http.createServer(app);
-
-// server.listen(port, () => {
-//   console.log(`Server is running on port ${port}`);
-// });
-
-// process.on("SIGINT", function () {
-//   if (server) {
-//     server.close(() => console.log("server closed"));
-//   }
-//   process.exit();
-// });
+app.use(function (err, req, res, next) {
+  console.error(err);
+  res.status(err.status || 500).send({ message: err.message, success: false });
+});
 
 module.exports = app;
