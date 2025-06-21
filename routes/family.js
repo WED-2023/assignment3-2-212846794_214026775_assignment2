@@ -17,7 +17,7 @@ router.use((req, res, next) => {
 router.get("/", async (req, res, next) => {
   try {
     const recipes = await DButils.execQuery(
-      `SELECT * FROM family_recipes WHERE created_by = ?`,
+      `SELECT * FROM family_recipes WHERE user_id = ?`,
       [req.session.user_id]
     );
     res.status(200).send(recipes);
@@ -33,7 +33,7 @@ router.get("/", async (req, res, next) => {
 router.get("/:recipeId", async (req, res, next) => {
   try {
     const result = await DButils.execQuery(
-      `SELECT * FROM family_recipes WHERE family_recipe_id = ? AND created_by = ?`,
+      `SELECT * FROM family_recipes WHERE family_recipe_id = ? AND user_id = ?`,
       [req.params.recipeId, req.session.user_id]
     );
 
@@ -55,34 +55,43 @@ router.post("/", async (req, res, next) => {
   try {
     const {
       title,
-      family_member,
+      owner,
       occasion,
       ingredients,
       instructions,
-      images
+      image,
+      notes,
+      base_recipe_id
     } = req.body;
 
-    if (!title || !ingredients || !instructions) {
+    if (!title || !owner || !ingredients || !instructions) {
       return res.status(400).send({ message: "Missing required fields" });
     }
 
+    // Convert arrays to JSON strings if they aren't already
+    const ingredientsStr = Array.isArray(ingredients) ? JSON.stringify(ingredients) : ingredients;
+    const instructionsStr = Array.isArray(instructions) ? JSON.stringify(instructions) : instructions;
+
     await DButils.execQuery(
       `INSERT INTO family_recipes
-       (title, family_member, occasion, ingredients, instructions, images, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (user_id, title, owner, occasion, ingredients, instructions, image, notes, base_recipe_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        req.session.user_id,
         title,
-        family_member || null,
+        owner,
         occasion || null,
-        JSON.stringify(ingredients),
-        instructions,
-        JSON.stringify(images || []),
-        req.session.user_id
+        ingredientsStr,
+        instructionsStr,
+        image || null,
+        notes || null,
+        base_recipe_id || null
       ]
     );
 
     res.status(201).send({ message: "Family recipe created successfully" });
   } catch (error) {
+    console.error('Error creating family recipe:', error);
     next(error);
   }
 });
@@ -95,24 +104,24 @@ router.put("/:recipeId", async (req, res, next) => {
   try {
     const {
       title,
-      family_member,
+      owner,
       occasion,
       ingredients,
       instructions,
-      images
+      image
     } = req.body;
 
     const result = await DButils.execQuery(
       `UPDATE family_recipes
-       SET title = ?, family_member = ?, occasion = ?, ingredients = ?, instructions = ?, images = ?
-       WHERE family_recipe_id = ? AND created_by = ?`,
+       SET title = ?, owner = ?, occasion = ?, ingredients = ?, instructions = ?, image = ?
+       WHERE family_recipe_id = ? AND user_id = ?`,
       [
         title,
-        family_member || null,
+        owner,
         occasion || null,
-        JSON.stringify(ingredients),
+        ingredients,
         instructions,
-        JSON.stringify(images || []),
+        image || null,
         req.params.recipeId,
         req.session.user_id
       ]
@@ -135,7 +144,7 @@ router.put("/:recipeId", async (req, res, next) => {
 router.delete("/:recipeId", async (req, res, next) => {
   try {
     const result = await DButils.execQuery(
-      `DELETE FROM family_recipes WHERE family_recipe_id = ? AND created_by = ?`,
+      `DELETE FROM family_recipes WHERE family_recipe_id = ? AND user_id = ?`,
       [req.params.recipeId, req.session.user_id]
     );
 

@@ -164,12 +164,15 @@ router.post("/lastWatchedRecipes", authMiddleware, async (req, res, next) => {
   }
 });
 
+// prepare recipe 
+
 router.post('/prepare-recipe/:recipeId', async (req, res, next) => {
   try {
     const user_id = req.session.user_id;
     const recipe_id = req.params.recipeId;
+    const { plan_id } = req.body;
 
-    await user_utils.addPrepareRecipe(recipe_id, user_id);
+    await user_utils.addPrepareRecipe(recipe_id, user_id, plan_id);
 
     res.status(201).send({ message: "Recipe added to preparation tracking" });
   } catch (error) {
@@ -180,9 +183,11 @@ router.post('/prepare-recipe/:recipeId', async (req, res, next) => {
 // in users.js or prepare.js
 router.get("/prepare-recipe/:recipeId", async (req, res, next) => {
   try {
+    const { plan_id } = req.query;
     const result = await user_utils.getRecipePreparation(
       req.params.recipeId,
-      req.session.user_id
+      req.session.user_id,
+      plan_id
     );
     res.status(200).send(result);
   } catch (error) {
@@ -191,18 +196,57 @@ router.get("/prepare-recipe/:recipeId", async (req, res, next) => {
 });
 
 
-router.put('/prepare-recipe/:recipeId/progress', async (req, res, next) => {
+router.put('/prepare-recipe/:recipeId/preparation-step', async (req, res, next) => {
   try {
     const user_id = req.session.user_id;
     const recipe_id = req.params.recipeId;
-    const { step_number } = req.body;
+    const { step, plan_id } = req.body;
 
-    if (typeof step_number !== 'number') {
-      return res.status(400).send({ message: 'Invalid step_number' });
+    if (typeof step !== 'number') {
+      return res.status(400).send({ message: 'Invalid preparation step number' });
     }
 
-    await user_utils.updateRecipeProgress(recipe_id, user_id, step_number);
-    res.status(200).send({ message: 'Step updated successfully' });
+    let query;
+    let params;
+    if (plan_id !== null && plan_id !== undefined) {
+      query = `UPDATE recipe_progress SET current_preperation_step = ? WHERE user_id = ? AND recipe_id = ? AND plan_id = ?`;
+      params = [step, user_id, recipe_id, plan_id];
+    } else {
+      query = `UPDATE recipe_progress SET current_preperation_step = ? WHERE user_id = ? AND recipe_id = ? AND plan_id IS NULL`;
+      params = [step, user_id, recipe_id];
+    }
+
+    await DButils.execQuery(query, params);
+
+    res.status(200).send({ message: 'Preparation step updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.put('/prepare-recipe/:recipeId/ingredient-step', async (req, res, next) => {
+  try {
+    const user_id = req.session.user_id;
+    const recipe_id = req.params.recipeId;
+    const { step, plan_id } = req.body;
+
+    if (typeof step !== 'number') {
+      return res.status(400).send({ message: 'Invalid ingredient step number' });
+    }
+
+    let query;
+    let params;
+    if (plan_id !== null && plan_id !== undefined) {
+      query = `UPDATE recipe_progress SET current_ingredient_step = ? WHERE user_id = ? AND recipe_id = ? AND plan_id = ?`;
+      params = [step, user_id, recipe_id, plan_id];
+    } else {
+      query = `UPDATE recipe_progress SET current_ingredient_step = ? WHERE user_id = ? AND recipe_id = ? AND plan_id IS NULL`;
+      params = [step, user_id, recipe_id];
+    }
+
+    await DButils.execQuery(query, params);
+
+    res.status(200).send({ message: 'Ingredient step updated successfully' });
   } catch (error) {
     next(error);
   }
@@ -211,14 +255,14 @@ router.put('/prepare-recipe/:recipeId/progress', async (req, res, next) => {
 router.put('/prepare-recipe/:recipeId/servings', async (req, res, next) => {
   try {
     const recipeId = req.params.recipeId;
-    const { servings } = req.body;
+    const { servings, plan_id } = req.body;
     const userId = req.session.user_id;
 
     if (!servings || servings <= 0) {
       return res.status(400).send({ message: "Invalid servings value" });
     }
 
-    await user_utils.scaleRecipeServings(recipeId, userId, servings);
+    await user_utils.scaleRecipeServings(recipeId, userId, servings, plan_id);
     res.status(200).send({ message: "Servings scaled successfully" });
   } catch (error) {
     next(error);

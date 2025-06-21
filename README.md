@@ -10,3 +10,7 @@ We change the api in two places:
 1. adding lastwatched api to get the last watched by the user.
 2. adding logut api to end the session to the user.
 
+changes for 3.3:
+1. change the backend api to handle better requests for the frontend
+2. added more api requests for the bounus for better handling for the frontend and more understanding
+

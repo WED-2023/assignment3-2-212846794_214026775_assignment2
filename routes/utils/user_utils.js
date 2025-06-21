@@ -8,28 +8,9 @@ async function markAsFavorite(user_id, recipe_id) {
   await DButils.execQuery(`
     INSERT INTO user_favorites (user_id, recipe_id)
     VALUES (?, ?)
-    ON DUPLICATE KEY UPDATE user_id = user_id
-  `, [user_id, recipe_id]);
-}
-
-/**
- * Get user's favorite recipes
- */
-async function markAsFavorite(user_id, recipe_id) {
-  await DButils.execQuery(`
-    INSERT INTO user_favorites (user_id, recipe_id)
-    VALUES (?, ?)
     ON DUPLICATE KEY UPDATE favorited_at = CURRENT_TIMESTAMP
   `, [user_id, recipe_id]);
 }
-async function markAsFavorite(user_id, recipe_id) {
-  await DButils.execQuery(`
-    INSERT INTO user_favorites (user_id, recipe_id)
-    VALUES (?, ?)
-    ON DUPLICATE KEY UPDATE favorited_at = CURRENT_TIMESTAMP
-  `, [user_id, recipe_id]);
-}
-
 
 /**
  * Get user profile
@@ -113,7 +94,6 @@ async function markAsWatched(user_id, recipe_id) {
   `, [user_id, user_id]);
 }
 
-
 /**
  * Get last watched recipes
  */
@@ -130,93 +110,9 @@ async function getLastWatchedRecipes(user_id) {
 }
 
 /**
- * Add a recipe to the meal plan
- */
-async function addToMealPlan(user_id, recipe_id) {
-  await DButils.execQuery(`
-    INSERT INTO meal_plan (user_id, recipe_id)
-    VALUES (?, ?)
-    ON DUPLICATE KEY UPDATE recipe_id = recipe_id
-  `, [user_id, recipe_id]);
-}
-
-/**
- * Get meal plan for user
- */
-async function getMealPlan(user_id) {
-  const rows = await DButils.execQuery(`
-    SELECT * FROM meal_plan WHERE user_id = ?
-  `, [user_id]);
-
-  return rows;
-}
-
-/**
- * Remove from meal plan
- */
-async function removeFromMealPlan(user_id, recipe_id) {
-  await DButils.execQuery(`
-    DELETE FROM meal_plan WHERE user_id = ? AND recipe_id = ?
-  `, [user_id, recipe_id]);
-}
-
-/**
- * Update progress in meal plan
- */
-async function updateMealPlanProgress(user_id, recipe_id, progress) {
-  await DButils.execQuery(`
-    UPDATE meal_plan SET progress = ? WHERE user_id = ? AND recipe_id = ?
-  `, [progress, user_id, recipe_id]);
-}
-
-/**
- * Update meal plan order (day & meal_type)
- */
-async function updateMealPlanOrder(user_id, updates) {
-  for (const { recipe_id, day_of_week, meal_type } of updates) {
-    await DButils.execQuery(`
-      UPDATE meal_plan SET day_of_week = ?, meal_type = ?
-      WHERE user_id = ? AND recipe_id = ?
-    `, [day_of_week, meal_type, user_id, recipe_id]);
-  }
-}
-
-async function getFavoriteRecipes(user_id) {
-  // Get all favorited recipe IDs
-  const rows = await DButils.execQuery(
-    `SELECT recipe_id FROM user_favorites WHERE user_id = ?`,
-    [user_id]
-  );
-
-  const recipeIds = rows.map(row => row.recipe_id);
-
-  const results = [];
-
-  for (const id of recipeIds) {
-    const local = await DButils.execQuery(
-      `SELECT * FROM recipes WHERE recipe_id = ?`,
-      [id]
-    );
-
-    if (local.length > 0) {
-      results.push(local[0]);
-    } else {
-      try {
-        const external = await recipes_utils.getRecipePreview(id);
-        results.push(external);
-      } catch (err) {
-        console.warn(`Could not fetch recipe ${id} from Spoonacular:`, err.message);
-      }
-    }
-  }
-
-  return results;
-}
-
-/**
  * Add a recipe to preparation progress
  */
-async function addPrepareRecipe(recipe_id, user_id) {
+async function addPrepareRecipe(recipe_id, user_id, plan_id = null) {
   let servings = 1;
 
   const localRecipe = await DButils.execQuery(
@@ -228,167 +124,283 @@ async function addPrepareRecipe(recipe_id, user_id) {
     servings = localRecipe[0].servings || 1;
   } else {
     try {
-      const spoonacular = await recipes_utils.getRecipeInformation(recipe_id,user_id);
+      const spoonacular = await recipes_utils.getRecipeInformation(recipe_id, user_id);
       servings = spoonacular?.servings || 1;
     } catch (e) {
       throw { status: 404, message: "Recipe not found (Spoonacular API failed)" };
     }
   }
 
-  await DButils.execQuery(
-    `INSERT INTO recipe_progress (user_id, recipe_id, servings, current_step)
-     VALUES (?, ?, ?, 0)
-     ON DUPLICATE KEY UPDATE servings = VALUES(servings), current_step = 0`,
-    [user_id, recipe_id, servings]
+  // Check if a progress entry already exists
+  const existingProgress = await DButils.execQuery(
+    `SELECT current_preperation_step, current_ingredient_step FROM recipe_progress WHERE user_id = ? AND recipe_id = ?`,
+    [user_id, recipe_id]
+  );
+
+  if (existingProgress.length > 0) {
+    // If progress exists, update servings and plan_id, but preserve steps
+    await DButils.execQuery(
+      `UPDATE recipe_progress SET plan_id = ?, servings = ? WHERE user_id = ? AND recipe_id = ?`,
+      [plan_id, servings, user_id, recipe_id]
+    );
+  } else {
+    // If no progress exists, create a new entry
+    await DButils.execQuery(
+      `INSERT INTO recipe_progress (user_id, recipe_id, plan_id, servings, current_preperation_step, current_ingredient_step)
+       VALUES (?, ?, ?, ?, 0, 0)`,
+      [user_id, recipe_id, plan_id, servings]
   );
 }
+}
 
+/**
+ * Update recipe progress
+ */
 async function updateRecipeProgress(recipe_id, user_id, step_number) {
   await DButils.execQuery(
-    `UPDATE recipe_progress 
-     SET current_step = ? 
-     WHERE user_id = ? AND recipe_id = ?`,
+    `UPDATE recipe_progress SET current_preperation_step = ? WHERE user_id = ? AND recipe_id = ?`,
     [step_number, user_id, recipe_id]
   );
 }
 
-async function scaleRecipeServings(recipe_id, user_id, new_servings) {
-  try {
-    // Fetch the original number of servings
-    const original = await DButils.execQuery(
-      `SELECT servings FROM recipe_progress WHERE recipe_id = ? AND user_id = ?`,
-      [recipe_id, user_id]
-    );
-
-    if (original.length === 0) {
-      throw { status: 404, message: "No preparation record found for this recipe." };
-    }
-
-    const original_servings = original[0].servings;
-    if (original_servings === 0) {
-      throw { status: 400, message: "Original servings cannot be zero." };
-    }
-
-    // Update servings in recipe_progress
+/**
+ * Scale recipe servings
+ */
+async function scaleRecipeServings(recipe_id, user_id, new_servings, plan_id = null) {
     await DButils.execQuery(
-      `UPDATE recipe_progress SET servings = ? WHERE recipe_id = ? AND user_id = ?`,
-      [new_servings, recipe_id, user_id]
-    );
-
-    // Return scale ratio if needed
-    return {
-      message: "Servings updated",
-      scale_factor: new_servings / original_servings
-    };
-  } catch (error) {
-    throw { status: 500, message: error.message || "Error scaling servings" };
-  }
+    `UPDATE recipe_progress SET servings = ?, plan_id = ? WHERE user_id = ? AND recipe_id = ?`,
+    [new_servings, plan_id, user_id, recipe_id]
+  );
 }
 
-
-async function getRecipePreparation(recipe_id, user_id) {
-  // Check progress entry
-  const progressRows = await DButils.execQuery(
-    `SELECT servings, current_step FROM recipe_progress
-     WHERE user_id = ? AND recipe_id = ?`,
+/**
+ * Get recipe preparation data
+ */
+async function getRecipePreparation(recipe_id, user_id, plan_id = null) {
+  const progress = await DButils.execQuery(
+    `SELECT * FROM recipe_progress WHERE user_id = ? AND recipe_id = ?`,
     [user_id, recipe_id]
   );
 
-  if (progressRows.length === 0) {
-    throw { status: 404, message: "Recipe not started by user" };
+  if (progress.length === 0) {
+    throw { status: 404, message: "Recipe preparation not found" };
   }
 
-  const progress = progressRows[0];
+  const recipe = await recipes_utils.getRecipeInformation(recipe_id, user_id);
+  return {
+    ...recipe,
+    current_preperation_step: progress[0].current_preperation_step,
+    current_ingredient_step: progress[0].current_ingredient_step,
+    servings: progress[0].servings,
+    plan_id: progress[0].plan_id
+  };
+}
 
-  // Try local recipe
-  const localRecipe = await DButils.execQuery(
-    `SELECT * FROM recipes WHERE recipe_id = ?`,
-    [recipe_id]
+/**
+ * Get user's favorite recipes
+ */
+async function getFavoriteRecipes(user_id) {
+  // Get all favorited recipe IDs
+  const rows = await DButils.execQuery(
+    `SELECT recipe_id FROM user_favorites WHERE user_id = ?`,
+    [user_id]
   );
 
-  let recipe;
-  if (localRecipe.length > 0) {
-    recipe = localRecipe[0];
-  } else {
-    // Fetch from Spoonacular
-    recipe = await recipes_utils.getRecipeInformation(recipe_id);
-    if (!recipe) {
-      throw { status: 404, message: "Recipe not found" };
+  const recipeIds = rows.map(row => row.recipe_id);
+  const results = [];
+
+  for (const id of recipeIds) {
+    // First check if it's a local recipe
+    const local = await DButils.execQuery(
+      `SELECT * FROM recipes WHERE recipe_id = ?`,
+      [id]
+    );
+
+    if (local.length > 0) {
+      // It's a local recipe, add it directly
+      results.push(local[0]);
+      continue;
+    }
+
+    // Check if it's a family recipe
+    const family = await DButils.execQuery(
+      `SELECT * FROM family_recipes WHERE recipe_id = ?`,
+      [id]
+    );
+
+    if (family.length > 0) {
+      // It's a family recipe, transform and add it
+      const transformed = await transformFamilyRecipeData(family[0]);
+      results.push(transformed);
+      continue;
+    }
+
+    // If not found locally, try Spoonacular
+    try {
+      const external = await recipes_utils.getRecipePreview(id);
+      results.push(external);
+    } catch (err) {
+      console.warn(`Could not fetch recipe ${id} from Spoonacular:`, err.message);
+      // Skip this recipe instead of failing
+      continue;
     }
   }
 
-  return {
-    ...recipe,
-    servings: progress.servings,
-    current_step: progress.current_step
-  };
+  return results;
 }
 
+/**
+ * Transform family recipe data
+ */
 async function transformFamilyRecipeData(recipe) {
   return {
-    id: recipe.family_recipe_id,
-    title: recipe.title,
-    owner: recipe.owner,
-    occasion: recipe.occasion,
-    image: recipe.image || '/deafult_recipe_image.png',
+    ...recipe,
     ingredients: JSON.parse(recipe.ingredients || '[]'),
-    instructions: JSON.parse(recipe.instructions || '[]'),
+    instructions: recipe.instructions.split('\n').filter(step => step.trim())
   };
 }
 
+/**
+ * Get user's family recipes
+ */
 async function getFamilyRecipes(user_id) {
-  try {
     const recipes = await DButils.execQuery(
-      "SELECT * FROM family_recipes WHERE user_id = ?",
+    `SELECT * FROM family_recipes WHERE user_id = ?`,
       [user_id]
     );
-    return recipes.map(transformFamilyRecipeData);
-  } catch (error) {
-    throw error;
-  }
+
+  return Promise.all(recipes.map(transformFamilyRecipeData));
 }
 
+/**
+ * Add a new family recipe
+ */
 async function addFamilyRecipe(user_id, recipeData) {
-  const {
-    title,
-    owner,
-    occasion,
-    image,
-    ingredients,
-    instructions
-  } = recipeData;
+  const { title, owner, whenToPrepare, readyInMinutes, vegetarian, vegan, glutenFree, instructions, image, ingredients } = recipeData;
 
-  await DButils.execQuery(
+  const result = await DButils.execQuery(
     `INSERT INTO family_recipes (
-      user_id, title, owner, occasion, image, ingredients, instructions
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      user_id, title, owner, when_to_prepare, ready_in_minutes,
+      vegetarian, vegan, gluten_free, instructions, image, ingredients
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      user_id, title, owner, occasion, image || null,
-      JSON.stringify(ingredients || []),
-      JSON.stringify(instructions || []),
+      user_id, title, owner, whenToPrepare, readyInMinutes,
+      vegetarian, vegan, glutenFree, instructions, image,
+      JSON.stringify(ingredients)
     ]
   );
-  return { message: "Family recipe added successfully" };
+
+  return result.insertId;
+}
+
+/**
+ * Add a recipe to meal plan
+ */
+async function addRecipeToMealPlan(user_id, recipe_id, plan_id, day_of_week, meal_type) {
+  // Check if the meal plan exists and belongs to the user
+  const plan = await DButils.execQuery(
+    `SELECT plan_id FROM meal_plans WHERE plan_id = ? AND user_id = ?`,
+    [plan_id, user_id]
+    );
+
+  if (plan.length === 0) {
+    throw { status: 404, message: "Meal plan not found or does not belong to user" };
+  }
+
+  // Add the recipe to the meal plan
+    await DButils.execQuery(
+    `INSERT INTO meal_plan_recipes (plan_id, recipe_id, day_of_week, meal_type)
+     VALUES (?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE day_of_week = ?, meal_type = ?`,
+    [plan_id, recipe_id, day_of_week, meal_type, day_of_week, meal_type]
+  );
+}
+
+/**
+ * Get user's meal plans
+ */
+async function getUserMealPlan(user_id) {
+  // Get all meal plans for the user
+  const plans = await DButils.execQuery(
+      `SELECT * FROM meal_plans WHERE user_id = ?`,
+      [user_id]
+    );
+
+  // For each plan, get its recipes
+  for (const plan of plans) {
+    const recipes = await DButils.execQuery(
+      `SELECT mpr.*, r.* 
+       FROM meal_plan_recipes mpr 
+       LEFT JOIN recipes r ON mpr.recipe_id = r.recipe_id 
+       WHERE mpr.plan_id = ?`,
+      [plan.plan_id]
+    );
+
+    plan.recipes = recipes;
+  }
+
+  return plans;
+}
+
+/**
+ * Remove recipe from meal plan
+ */
+async function removeRecipeFromMealPlan(user_id, recipe_id, plan_id) {
+  // Check if the meal plan exists and belongs to the user
+  const plan = await DButils.execQuery(
+    `SELECT plan_id FROM meal_plans WHERE plan_id = ? AND user_id = ?`,
+    [plan_id, user_id]
+    );
+
+  if (plan.length === 0) {
+    throw { status: 404, message: "Meal plan not found or does not belong to user" };
+    }
+
+  // Remove the recipe from the meal plan
+    await DButils.execQuery(
+    `DELETE FROM meal_plan_recipes WHERE plan_id = ? AND recipe_id = ?`,
+    [plan_id, recipe_id]
+    );
+}
+
+/**
+ * Update meal plan recipe progress
+ */
+async function updateMealPlanProgress(user_id, recipe_id, progress, plan_id) {
+  // Check if the meal plan exists and belongs to the user
+  const plan = await DButils.execQuery(
+    `SELECT plan_id FROM meal_plans WHERE plan_id = ? AND user_id = ?`,
+    [plan_id, user_id]
+    );
+
+  if (plan.length === 0) {
+    throw { status: 404, message: "Meal plan not found or does not belong to user" };
+    }
+
+  // Update the recipe's progress in the meal plan
+    await DButils.execQuery(
+    `UPDATE meal_plan_recipes SET progress = ? WHERE plan_id = ? AND recipe_id = ?`,
+    [progress, plan_id, recipe_id]
+    );
 }
 
 module.exports = {
-  addPrepareRecipe,
   markAsFavorite,
-  getFavoriteRecipes,
   getUserProfile,
   updateUserProfile,
   getUserRecipes,
   markAsWatched,
   getLastWatchedRecipes,
-  getRecipePreparation,
-  addToMealPlan,
-  getMealPlan,
-  removeFromMealPlan,
-  updateMealPlanProgress,
-  updateMealPlanOrder,
+  addPrepareRecipe,
   updateRecipeProgress,
   scaleRecipeServings,
+  getRecipePreparation,
+  getFavoriteRecipes,
+  transformFamilyRecipeData,
   getFamilyRecipes,
   addFamilyRecipe,
+  addRecipeToMealPlan,
+  getUserMealPlan,
+  removeRecipeFromMealPlan,
+  updateMealPlanProgress
 };
-

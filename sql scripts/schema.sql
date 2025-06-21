@@ -1,4 +1,3 @@
-
 DROP DATABASE IF EXISTS mydb;
 CREATE DATABASE mydb;
 USE mydb;
@@ -76,8 +75,7 @@ CREATE TABLE IF NOT EXISTS meal_plans (
 CREATE TABLE IF NOT EXISTS meal_plan_recipes (
     plan_id INT NOT NULL,
     recipe_id BIGINT NOT NULL,
-    day_of_week VARCHAR(20),
-    meal_type VARCHAR(20),
+    recipe_order INT NOT NULL DEFAULT 0,
     progress VARCHAR(20) DEFAULT 'Not Started',
     PRIMARY KEY (plan_id, recipe_id),
     FOREIGN KEY (plan_id) REFERENCES meal_plans(plan_id) ON DELETE CASCADE
@@ -89,22 +87,28 @@ CREATE TABLE IF NOT EXISTS recipe_progress (
     user_id INT NOT NULL,
     recipe_id BIGINT NOT NULL,
     servings INT DEFAULT 1,
-    current_step INT DEFAULT 0,
+    current_preperation_step INT DEFAULT 0,
+    current_ingredient_step INT DEFAULT 0,
     PRIMARY KEY (user_id, recipe_id),
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 );
 
-CREATE TABLE family_recipes (
-              family_recipe_id INT NOT NULL AUTO_INCREMENT,
-              user_id INT NOT NULL,
-              title VARCHAR(255) NOT NULL,
-              owner VARCHAR(255) NOT NULL,
-              occasion TEXT,
-              image TEXT,
-              ingredients TEXT,
-              instructions TEXT,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              PRIMARY KEY (family_recipe_id),
-              FOREIGN KEY (user_id) REFERENCES users(user_id)
-            );
+ALTER TABLE recipe_progress
+ADD COLUMN plan_id INT NULL; 
+
+CREATE TABLE IF NOT EXISTS family_recipes (
+    family_recipe_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    owner VARCHAR(255) NOT NULL,
+    occasion VARCHAR(255),
+    ingredients TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    image TEXT,
+    notes TEXT,
+    base_recipe_id BIGINT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+

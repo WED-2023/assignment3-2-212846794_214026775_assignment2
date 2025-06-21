@@ -48,61 +48,20 @@ router.get("/popular", async (req, res, next) => {
  */
 router.get("/search", async (req, res, next) => {
   try {
-    const { 
-      q: query, 
-      cuisine, 
-      diet, 
-      intolerance, 
-      limit = 5, 
-      sort, 
-      sortDirection = 'asc' 
-    } = req.query;
-
-    // Validate required parameters
-    if (!query) {
-      return res.status(400).send({ 
-        success: false, 
-        message: "Search query is required" 
-      });
+    const { query, cuisine, diet, intolerance, limit = 5, sort, sortDirection } = req.query;
+    
+    // Validate query parameter
+    if (!query || typeof query !== 'string' || query.trim() === '') {
+      console.log('Backend: Empty search query received');
+      return res.status(400).send({ message: 'Search query is required' });
     }
 
-    // Validate limit
-    const parsedLimit = parseInt(limit);
-    if (isNaN(parsedLimit) || ![5, 10, 15].includes(parsedLimit)) {
-      return res.status(400).send({ 
-        success: false, 
-        message: "Limit must be 5, 10, or 15" 
-      });
-    }
-
-    // Validate sort direction
-    if (sort && !['asc', 'desc'].includes(sortDirection)) {
-      return res.status(400).send({ 
-        success: false, 
-        message: "Sort direction must be 'asc' or 'desc'" 
-      });
-    }
-
-    const results = await recipes_utils.search(
-      query,
-      cuisine,
-      diet,
-      intolerance,
-      parsedLimit,
-      sort,
-      sortDirection
-    );
-
-    res.send({
-      success: true,
-      data: results
-    });
+    console.log('Backend: Search request received with query:', query);
+    const results = await recipes_utils.search(query, cuisine, diet, intolerance, limit, sort, sortDirection);
+    res.send(results);
   } catch (error) {
-    console.error('Search error:', error);
-    res.status(500).send({ 
-      success: false, 
-      message: error.message || "Error searching recipes" 
-    });
+    console.error('Backend: Search error:', error);
+    next(error);
   }
 });
 

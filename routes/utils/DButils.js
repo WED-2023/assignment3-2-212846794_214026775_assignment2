@@ -115,19 +115,6 @@ async function createTables() {
     `);
 
     await execQuery(`
-      CREATE TABLE IF NOT EXISTS meal_plan (
-        user_id INT NOT NULL,
-        recipe_id BIGINT NOT NULL,
-        day_of_week VARCHAR(20),
-        meal_type VARCHAR(20),
-        progress VARCHAR(20) DEFAULT 'Not Started',
-        PRIMARY KEY (user_id, recipe_id),
-        FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
-        FOREIGN KEY (recipe_id) REFERENCES recipes(recipe_id) ON DELETE CASCADE
-      );
-    `);
-
-    await execQuery(`
       CREATE TABLE IF NOT EXISTS recipe_progress (
           user_id INT NOT NULL,
           recipe_id BIGINT NOT NULL,

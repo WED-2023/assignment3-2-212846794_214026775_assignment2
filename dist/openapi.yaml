@@ -59,11 +59,16 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UserProfile'
+      responses:
+        "200": { description: User profile updated }
+        "400": { description: Invalid input }
 
   /users/profile/favorites:
     get:
       tags: [Favorites]
       summary: Get favorite recipes
+      responses:
+        "200": { description: List of favorite recipes }
     post:
       tags: [Favorites]
       summary: Add recipe to favorites
@@ -75,6 +80,9 @@ paths:
               type: object
               properties:
                 recipeId: { type: integer }
+      responses:
+        "200": { description: Recipe added to favorites }
+        "400": { description: Invalid input }
     delete:
       tags: [Favorites]
       summary: Remove recipe from favorites
@@ -86,11 +94,16 @@ paths:
               type: object
               properties:
                 recipeId: { type: integer }
+      responses:
+        "200": { description: Recipe removed from favorites }
+        "400": { description: Invalid input }
 
   /users/lastWatchedRecipes:
     get:
       tags: [Watched]
       summary: Get last 3 watched recipes
+      responses:
+        "200": { description: List of last watched recipes }
     post:
       tags: [Watched]
       summary: Add recipe to last watched
@@ -102,6 +115,9 @@ paths:
               type: object
               properties:
                 recipeId: { type: integer }
+      responses:
+        "200": { description: Recipe added to watched list }
+        "400": { description: Invalid input }
 
   /users/prepare-recipe/{recipeId}:
     post:
@@ -112,6 +128,17 @@ paths:
           in: path
           required: true
           schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                planId: { type: integer }
+      responses:
+        "200": { description: Recipe preparation started }
+        "404": { description: Recipe not found }
     get:
       tags: [Preparation]
       summary: Get preparation data
@@ -120,11 +147,18 @@ paths:
           in: path
           required: true
           schema: { type: integer }
+        - name: planId
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200": { description: Recipe preparation data }
+        "404": { description: Recipe not found }
 
-  /users/prepare-recipe/{recipeId}/progress:
+  /users/prepare-recipe/{recipeId}/ingredient-step:
     put:
       tags: [Preparation]
-      summary: Update recipe preparation step
+      summary: Update ingredient step progress
       parameters:
         - name: recipeId
           in: path
@@ -138,6 +172,34 @@ paths:
               type: object
               properties:
                 step_number: { type: integer }
+                planId: { type: integer }
+      responses:
+        "200": { description: Ingredient step updated }
+        "400": { description: Invalid step number }
+        "404": { description: Recipe not found }
+
+  /users/prepare-recipe/{recipeId}/preparation-step:
+    put:
+      tags: [Preparation]
+      summary: Update preparation step progress
+      parameters:
+        - name: recipeId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                step_number: { type: integer }
+                planId: { type: integer }
+      responses:
+        "200": { description: Preparation step updated }
+        "400": { description: Invalid step number }
+        "404": { description: Recipe not found }
 
   /users/prepare-recipe/{recipeId}/servings:
     put:
@@ -156,84 +218,18 @@ paths:
               type: object
               properties:
                 servings: { type: integer }
-
-  /users/prepare-recipe/progress:
-    delete:
-      tags: [Preparation]
-      summary: Clear all preparation progress
-
-  /users/{username}/family-recipes:
-    get:
-      tags: [Family]
-      summary: Get user's family recipes
-      parameters:
-        - name: username
-          in: path
-          required: true
-          schema: { type: string }
-    post:
-      tags: [Family]
-      summary: Add new family recipe
-      parameters:
-        - name: username
-          in: path
-          required: true
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NewFamilyRecipe'
-
-  /recipes:
-    get:
-      tags: [Recipes]
-      summary: Get random recipes
-    post:
-      tags: [Recipes]
-      summary: Create a new recipe
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/NewRecipe'
-
-  /recipes/popular:
-    get:
-      tags: [Recipes]
-      summary: Get popular recipes
-
-  /recipes/trending:
-    get:
-      tags: [Recipes]
-      summary: Get trending recipes
-
-  /recipes/search:
-    get:
-      tags: [Recipes]
-      summary: Search recipes
-      parameters:
-        - name: query
-          in: query
-          required: true
-          schema: { type: string }
-
-  /recipes/{recipeId}:
-    get:
-      tags: [Recipes]
-      summary: Get recipe by ID
-      parameters:
-        - name: recipeId
-          in: path
-          required: true
-          schema: { type: integer }
+                planId: { type: integer }
+      responses:
+        "200": { description: Servings updated }
+        "400": { description: Invalid servings value }
+        "404": { description: Recipe not found }
 
   /meal-plan/plans:
     get:
       tags: [MealPlan]
       summary: Get all user meal plans
+      responses:
+        "200": { description: List of meal plans }
     post:
       tags: [MealPlan]
       summary: Create a new meal plan
@@ -245,6 +241,9 @@ paths:
               type: object
               properties:
                 name: { type: string }
+      responses:
+        "201": { description: Meal plan created }
+        "400": { description: Invalid request }
 
   /meal-plan/plans/{planId}:
     get:
@@ -255,6 +254,9 @@ paths:
           in: path
           required: true
           schema: { type: integer }
+      responses:
+        "200": { description: Meal plan recipes }
+        "404": { description: Meal plan not found }
     post:
       tags: [MealPlan]
       summary: Add recipe to plan
@@ -273,8 +275,22 @@ paths:
                 recipe_id: { type: integer }
                 day_of_week: { type: string }
                 meal_type: { type: string }
+      responses:
+        "200": { description: Recipe added to plan }
+        "404": { description: Meal plan not found }
+    delete:
+      tags: [MealPlan]
+      summary: Delete meal plan
+      parameters:
+        - name: planId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: Meal plan deleted }
+        "404": { description: Meal plan not found }
 
-  /meal-plan/plans/{planId}/{recipeId}:
+  /meal-plan/plans/{planId}/recipes/{recipeId}:
     delete:
       tags: [MealPlan]
       summary: Remove recipe from plan
@@ -287,16 +303,35 @@ paths:
           in: path
           required: true
           schema: { type: integer }
+      responses:
+        "200": { description: Recipe removed from plan }
+        "404": { description: Meal plan or recipe not found }
 
-  /meal-plan/plans/{planId}/{recipeId}/progress:
-    put:
+  /meal-plan/clear:
+    delete:
       tags: [MealPlan]
-      summary: Update recipe progress
+      summary: Clear all recipes from all meal plans
+      responses:
+        "200": { description: All meal plans cleared }
+
+  /meal-plan/clear/{planId}:
+    delete:
+      tags: [MealPlan]
+      summary: Clear all recipes from a specific meal plan
       parameters:
         - name: planId
           in: path
           required: true
           schema: { type: integer }
+      responses:
+        "200": { description: Meal plan cleared }
+        "404": { description: Meal plan not found }
+
+  /meal-plan/progress/{recipeId}:
+    put:
+      tags: [MealPlan]
+      summary: Update recipe progress in meal plan
+      parameters:
         - name: recipeId
           in: path
           required: true
@@ -311,6 +346,100 @@ paths:
                 progress:
                   type: string
                   enum: [Not Started, In Progress, Completed]
+                plan_id: { type: integer }
+      responses:
+        "200": { description: Progress updated }
+        "400": { description: Invalid progress value }
+        "404": { description: Recipe not found }
+
+  /users/{username}/family-recipes:
+    get:
+      tags: [Family]
+      summary: Get user's family recipes
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: List of family recipes }
+        "404": { description: User not found }
+    post:
+      tags: [Family]
+      summary: Add new family recipe
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewFamilyRecipe'
+      responses:
+        "201": { description: Family recipe created }
+        "400": { description: Invalid input }
+
+  /recipes:
+    get:
+      tags: [Recipes]
+      summary: Get random recipes
+      responses:
+        "200": { description: List of random recipes }
+    post:
+      tags: [Recipes]
+      summary: Create a new recipe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewRecipe'
+      responses:
+        "201": { description: Recipe created }
+        "400": { description: Invalid input }
+
+  /recipes/popular:
+    get:
+      tags: [Recipes]
+      summary: Get popular recipes
+      responses:
+        "200": { description: List of popular recipes }
+
+  /recipes/trending:
+    get:
+      tags: [Recipes]
+      summary: Get trending recipes
+      responses:
+        "200": { description: List of trending recipes }
+
+  /recipes/search:
+    get:
+      tags: [Recipes]
+      summary: Search recipes
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Search results }
+        "400": { description: Invalid query }
+
+  /recipes/{recipeId}:
+    get:
+      tags: [Recipes]
+      summary: Get recipe by ID
+      parameters:
+        - name: recipeId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200": { description: Recipe details }
+        "404": { description: Recipe not found }
 
 components:
   schemas:

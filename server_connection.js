@@ -1,25 +1,29 @@
 var path = require("path");
 var app = require('./main');
-var http = require('http');
+var https = require('https');
+var fs = require('fs');
+
+var httpsOptions = {
+  key: fs.readFileSync(path.join(__dirname, "privkey.pem")),//server.key
+  cert: fs.readFileSync(path.join(__dirname, "fullchain.pem")),//server.cert
+}
 
 /**
  * Get port from environment and store in Express.
  */
 var port = normalizePort(process.env.PORT || '443');
-var host = 'fad-ath.cs.bgu.ac.il';
-var port = normalizePort(process.env.PORT || '3000');
 
 app.set('port', port);
 
 /**
- * Create HTTPS server.
+ * Create HTTP server.
  */
-var server = http.createServer(app);
+var server = https.createServer(httpsOptions, app);
 
 /**
  * Listen on provided port, on all network interfaces.
  */
-server.listen(port, host);
+server.listen(port);
 server.on('error', onError);
 server.on('listening', onListening);
 
@@ -70,11 +74,11 @@ function onError(error) {
 /**
  * Event listener for HTTP server "listening" event.
  */
+server.address("https://fad-ath.cs.bgu.ac.il");
 function onListening() {
   var addr = server.address();
   var bind = typeof addr === 'string'
     ? 'pipe ' + addr
     : 'port ' + addr.port;
-  console.log(`Server is running on https://${host}:${port}`);
-    console.log(`Server listening on port ${port}`);
+    console.log(`Server listen in port ${port} in adrress ${addr.address}`);
 }
